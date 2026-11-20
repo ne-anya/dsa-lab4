@@ -1,0 +1,92 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flights
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flights"]
+      interval: 2s
+      retries: 30
+
+  supplier1:
+    build: ./supplier
+    environment:
+      SUPPLIER_ID: "1"
+      MEAN_DELAY_MS: "300"
+      ERROR_RATE: "0.05"
+      SLOW_RATE: "0"
+      FLIGHTS_PER_DAY: "500"
+    ports:
+      - "8101:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+
+  supplier2:
+    build: ./supplier
+    environment:
+      SUPPLIER_ID: "2"
+      MEAN_DELAY_MS: "500"
+      ERROR_RATE: "0.05"
+      SLOW_RATE: "0"
+      FLIGHTS_PER_DAY: "500"
+    ports:
+      - "8102:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+
+  supplier3:
+    build: ./supplier
+    environment:
+      SUPPLIER_ID: "3"
+      MEAN_DELAY_MS: "800"
+      ERROR_RATE: "0.05"
+      SLOW_RATE: "0.10"
+      SLOW_DELAY_S: "3"
+      FLIGHTS_PER_DAY: "500"
+    ports:
+      - "8103:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+
+  search:
+    build: ${SEARCH_DIR:-./search}
+    environment:
+      DB_URL: "postgresql+psycopg://postgres:postgres@db:5432/flights"
+      SUPPLIER_URLS: "http://supplier1:8000,http://supplier2:8000,http://supplier3:8000"
+    ports:
+      - "8000:8000"
+    cap_add:
+      - SYS_PTRACE          # разрешение для py-spy (только этому сервису)
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+    depends_on:
+      db:
+        condition: service_healthy
+      supplier1:
+        condition: service_healthy
+      supplier2:
+        condition: service_healthy
+      supplier3:
+        condition: service_healthy
+
+volumes:
+  pgdata:
